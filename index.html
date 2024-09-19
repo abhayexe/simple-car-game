@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>simple car game</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .control-button {
+            position: absolute;
+            bottom: 20px;
+            width: 80px;
+            height: 80px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border: none;
+            border-radius: 50%;
+            font-size: 24px;
+            color: black;
+            cursor: pointer;
+        }
+        .control-button:active{
+            background-color: aliceblue;
+        }
+        #left-button {
+            left: 20px;
+        }
+        #right-button {
+            right: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        Use A and D keys to move left and right<br>
+        Dodge the oncoming traffic<br>
+        Score: <span id="score">0</span>
+    </div>
+    <button id="left-button" class="control-button">←</button>
+    <button id="right-button" class="control-button">→</button>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Set up the scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Create player car (green cube)
+        const carGeometry = new THREE.BoxGeometry(1, 0.5, 2);
+        const carMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+        const player = new THREE.Mesh(carGeometry, carMaterial);
+        player.position.y = 0.25;
+        player.position.z = 45;
+        scene.add(player);
+
+        // Create a road
+        const roadGeometry = new THREE.PlaneGeometry(10, 1000);
+        const roadMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+        const road = new THREE.Mesh(roadGeometry, roadMaterial);
+        road.rotation.x = -Math.PI / 2;
+        road.position.z = -450;
+        scene.add(road);
+
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 5);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+
+        // Set up camera position
+        camera.position.set(0, 2, 50);
+        camera.lookAt(player.position);
+
+        function addPanorama(path) {
+            const geometry = new THREE.SphereGeometry(500, 60, 40);
+            // Flip the geometry inside out
+            geometry.scale(-1, 1, 1);
+
+            const texture = new THREE.TextureLoader().load(path);
+            const material = new THREE.MeshBasicMaterial({
+                map: texture
+            });
+
+            const mesh1 = new THREE.Mesh(geometry, material);
+            
+            // Rotate the sphere to align the panorama correctly
+            mesh1.rotation.y = Math.PI / 2;
+
+            scene.add(mesh1);
+        }
+
+        // Call this function after your scene is set up
+        addPanorama('image.png');
+
+        // Game variables
+        let traffic = [];
+        let score = 0;
+        let gameOver = false;
+        const carSpeed = 0.2;
+        const trafficSpeed = 0.8;
+        const spawnInterval = 60; // Frames between traffic spawns
+        let frameCount = 0;
+
+        // Handle keyboard input
+        const keyboard = {};
+
+        document.addEventListener('keydown', (event) => {
+            keyboard[event.key.toLowerCase()] = true;
+        });
+
+        document.addEventListener('keyup', (event) => {
+            keyboard[event.key.toLowerCase()] = false;
+        });
+
+        // Handle button input
+        const leftButton = document.getElementById('left-button');
+        const rightButton = document.getElementById('right-button');
+
+        leftButton.addEventListener('mousedown', () => keyboard['a'] = true);
+        leftButton.addEventListener('mouseup', () => keyboard['a'] = false);
+        leftButton.addEventListener('touchstart', (e) => { e.preventDefault(); keyboard['a'] = true; });
+        leftButton.addEventListener('touchend', () => keyboard['a'] = false);
+
+        rightButton.addEventListener('mousedown', () => keyboard['d'] = true);
+        rightButton.addEventListener('mouseup', () => keyboard['d'] = false);
+        rightButton.addEventListener('touchstart', (e) => { e.preventDefault(); keyboard['d'] = true; });
+        rightButton.addEventListener('touchend', () => keyboard['d'] = false);
+
+        function movePlayer() {
+            if (keyboard['a'] && player.position.x > -4) player.position.x -= carSpeed;
+            if (keyboard['d'] && player.position.x < 4) player.position.x += carSpeed;
+        }
+
+        function createTraffic() {
+            const trafficGeometry = new THREE.BoxGeometry(1, 0.5, 2);
+            const trafficMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+            const trafficCar = new THREE.Mesh(trafficGeometry, trafficMaterial);
+            
+            // Random position on the road
+            trafficCar.position.set(
+                Math.random() * 8 - 4,
+                0.25,
+                -50
+            );
+
+            scene.add(trafficCar);
+            traffic.push(trafficCar);
+        }
+
+        function updateTraffic() {
+            for (let i = traffic.length - 1; i >= 0; i--) {
+                traffic[i].position.z += trafficSpeed;
+
+                if (traffic[i].position.z > 55) {
+                    scene.remove(traffic[i]);
+                    traffic.splice(i, 1);
+                }
+            }
+        }
+
+        function checkCollision() {
+            const playerBox = new THREE.Box3().setFromObject(player);
+            
+            for (const car of traffic) {
+                const carBox = new THREE.Box3().setFromObject(car);
+                if (playerBox.intersectsBox(carBox)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        
+
+        // Animation loop
+        function animate() {
+            if (gameOver) {
+                document.getElementById('info').innerHTML = `Game Over! Your score: ${score}<br>Refresh to play again`;
+                return;
+            }
+
+            requestAnimationFrame(animate);
+            movePlayer();
+            updateTraffic();
+
+            frameCount++;
+            if (frameCount % spawnInterval === 0) {
+                createTraffic();
+            }
+
+            if (checkCollision()) {
+                gameOver = true;
+            } else {
+                score++;
+                document.getElementById('score').textContent = score;
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
